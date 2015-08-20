@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+html{
+  background-color: #2c3e50;
+ 
+}
+body {
+  width: 1024px;
+  margin-top: 0;
+  margin: auto;
+  font-family: "Lato", "PT Serif", serif;
+  color: #222222;
+  padding: 0;
+  font-weight: 300;
+  line-height: 33px;
+  -webkit-font-smoothing: antialiased;
+
+}
+
+
+.lines{
+  fill: none;
+  stroke:#95a5a6;
+}
+
+.vehPoint{
+  fill-opacity: 0.5;
+  stroke-width:  2px;
+}
+
+.key path {
+  display: none;
+}
+
+.key line {
+  stroke: #fff;
+  shape-rendering: crispEdges;
+}
+
+.legend-title {
+    font-weight: bold;
+}
+
+.legend-box {
+    fill: none;
+    stroke: #888;
+    font-size: 10px;
+}
+
+</style>
+<body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/queue-async/1.0.7/queue.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/1.6.19/topojson.min.js"></script>
+<script>
+
+var width = 1050,
+    height = 900,
+    TRANSITION_DELAY = 3000;
+
+var muniColors = {
+  'F': "none",
+  'J': "none",
+  'K': "none",
+  'L': "none",
+  'M': "none",
+  'N': "none",
+  'T': "none"
+};
+var radius = d3.scale.quantize()
+    .domain([500, 2600])
+    .range(d3.range(9).map(function(i) { return i }));
+
+
+var rateById = d3.map();
+
+var color = d3.scale.quantize()
+    .domain([500, 2600])
+    .range(['rgb(215,48,39)','rgb(244,109,67)','rgb(253,174,97)','rgb(254,224,139)','rgb(255,255,191)','rgb(217,239,139)','rgb(166,217,106)','rgb(102,189,99)','rgb(26,152,80)'].reverse());
+
+var projection = d3.geo.mercator()
+    .center([-122.433701, 37.767683])
+    .scale(250000)
+    .translate([width / 2, height / 2]);
+
+var path = d3.geo.path()
+    .projection(projection);
+
+var svg = d3.select("body").append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+queue()
+    .defer(d3.json, "basemap/sfmuni.json")
+    .await(ready);
+
+function ready(error, sf) {
+  if (error) throw error;
+
+  svg.append("g")
+      .attr("class", "counties")
+    .selectAll("path")
+      .data(topojson.feature(sf, sf.objects.sfmuni).features)
+    .enter().append("path")
+      .attr('class', 'lines')
+      .attr("d", path);
+
+    d3.xml('http://webservices.nextbus.com/service/publicXMLFeed?command=vehicleLocations&a=sf-muni&t=0', drawmuni);
+    // Reload muni data every 15s
+    setInterval(function() {
+        d3.xml('http://webservices.nextbus.com/service/publicXMLFeed?command=vehicleLocations&a=sf-muni&t=0', drawmuni);
+    }, 5000);
+
+}
+
+function closest_value(num) {
+    var arr = [5,10,15,20,25,30,40,50,60,65]
+    var ef = [2697.625867,1733.866395,1737.892468,1432.777503,1298.974415,1181.91817,513.0948203,520.1749146,558.8262891,757.2473859,979.783983,1613.526484];
+    var curr = arr[0];
+    var diff = Math.abs (num - curr);
+    for (var val = 0; val < arr.length; val++) {
+        var newdiff = Math.abs (num - arr[val]);
+        if (newdiff < diff) {
+            diff = newdiff;
+            curr = arr[val];
+        }
+    }
+    return ef[arr.indexOf(curr)];
+}
+
+function vehid(d) {
+  return d.getAttribute("id");
+}
+
+function drawmuni(munidata) {
+  console.log('map')
+ 
+  var translation = function(d) {
+    var pt = projection([d.getAttribute("lon"), d.getAttribute("lat")]);
+    return "translate(" + pt[0] + "," + pt[1] + ")" +
+           "rotate(" + d.getAttribute("heading") + ")"; 
+  };
+
+  vehicles = munidata.getElementsByTagName('vehicle');
+  vehPoints = svg.selectAll(".vehPoint").data(vehicles, vehid);
+  
+  vehPoints.transition().duration(TRANSITION_DELAY)
+         .attr("fill", function(d) {
+    var tag = d.getAttribute("routeTag");
+    return muniColors[tag] || color(closest_value(+d.getAttribute("speedKmHr")*0.621371))
+   })
+         .attr("transform", translation)
+  
+  vehPoints.enter()
+    .append("circle")
+    .attr("class", "vehPoint")
+    .attr("transform", translation)
+    .attr('r', 4)
+    //.attr("r", function(d){ return radius(closest_value(+d.getAttribute("speedKmHr")*0.621371))})
+    .attr("fill", function(d) {
+        var tag = d.getAttribute("routeTag");
+        return muniColors[tag] || color(closest_value(+d.getAttribute("speedKmHr")*0.621371))
+    })
+    .attr("stroke", function(d) {
+        var tag = d.getAttribute("routeTag");
+        return muniColors[tag] || color(closest_value(+d.getAttribute("speedKmHr")*0.621371))
+    })
+    .attr("opacity", 0.0)
+    .transition().duration(TRANSITION_DELAY)
+    .attr("opacity", 1);
+
+  /*
+  vehPoints.sort(function (a, b) { // select the parent and sort the path's
+      if (a.getAttribute("speedKmHr") > b.getAttribute("speedKmHr")) return -1;               // a is not the hovered element, send "a" to the back
+      else return 1;                             // a is the hovered element, bring "a" to the front
+  });
+  */
+          
+  vehPoints.exit().transition().duration(TRANSITION_DELAY)
+    .attr("opacity", 0.0)
+    .remove();
+}
+
+
+var qrange = function(max, num) {
+    var a = [];
+    for (var i=0; i<num; i++) {
+        a.push(i*max/num);
+    }
+    return a;
+}
+
+var boxmargin = 4,
+    lineheight = 14,
+    keyheight = 10,
+    keywidth = 55,
+    boxwidth = 2 * keywidth,
+    formatNumber = d3.format("0,000"),
+    margin = { "left": 160, "top": 115 };
+
+var ranges = color.range().length;
+
+var title = ['MUNI Bus','g CO2,e / km'],
+    titleheight = title.length*lineheight + boxmargin;
+var legend = svg.append("g")
+    .attr("transform", "translate ("+margin.left+","+margin.top+")")
+    .attr("class", "legend");
+    
+legend.selectAll("text")
+    .data(title)
+    .enter().append("text")
+    .attr("class", "legend-title")
+    .attr('x', boxwidth/2)
+    .attr("y", function(d, i) { return (i+1)*lineheight-2; })
+    .text(function(d) { return d; })
+    .style('fill', '#eee')
+    .style('text-anchor', 'middle')
+
+// make legend box 
+var lb = legend.append("rect")
+    .attr("transform", "translate (0,"+titleheight+")")
+    .attr("class", "legend-box")
+    .attr("width", boxwidth)
+    .attr("height", ranges*lineheight+2*boxmargin+lineheight-keyheight);
+
+// make quantized key legend items
+var li = legend.append("g")
+    .attr("transform", "translate (8,"+(titleheight+boxmargin)+")")
+    .attr("class", "legend-items");
+
+li.selectAll("rect")
+    .data(color.range().map(function(c) {
+      var d = color.invertExtent(c);
+      if (d[0] == null) d[0] = x.domain()[0];
+      if (d[1] == null) d[1] = x.domain()[1];
+      return d;
+    }))
+    .enter().append("rect")
+    .attr("y", function(d, i) { return i*lineheight+lineheight-keyheight; })
+    .attr("width", keywidth)
+    .attr("height", keyheight)
+    .style("fill", function(d) { return color(d[0]); });
+    
+li.selectAll("text")
+    .data(qrange(color.domain()[1], ranges))
+    .enter().append("text")
+    .attr("x", keywidth+5)
+    .attr("y", function(d, i) { return (i+1)*lineheight; })
+    .text(function(d) { return formatNumber(Math.round(d/100)*100); })
+    .style('fill', '#eee');
+
+
+d3.select(self.frameElement).style("height", height + "px");
+
+</script>
