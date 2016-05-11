@@ -2,30 +2,31 @@
 <meta charset="utf-8">
 <style>
 html{
-  background-color: #2c3e50;
- 
+  background-color: #000;
+
 }
 body {
   width: 1024px;
   margin-top: 0;
   margin: auto;
   font-family: "Lato", "PT Serif", serif;
-  color: #222222;
+  color: #000;
   padding: 0;
   font-weight: 300;
   line-height: 33px;
+  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
 
 }
 
-
 .lines{
   fill: none;
   stroke:#95a5a6;
+  opacity: 0.3;
 }
 
 .vehPoint{
-  fill-opacity: 0.5;
+  fill-opacity: 0.8;
   stroke-width:  2px;
 }
 
@@ -48,209 +49,266 @@ body {
     font-size: 10px;
 }
 
+#title{
+  position: absolute;;
+  top: 10px;
+  left: 20px;
+}
+#legend{
+  position: fixed;
+  top: 85px;
+  left: 20px;
+  z-index: 100;
+}
+
+.d3-tip {
+  line-height: 1;
+  font-weight: bold;
+  padding: 12px;
+  background: rgba(256, 256, 256, 0.9);
+  color: #000;
+  border-radius: 2px;
+}
+
 </style>
-<body>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/queue-async/1.0.7/queue.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/1.6.19/topojson.min.js"></script>
+<script src="http://labratrevenge.com/d3-tip/javascripts/d3.tip.v0.6.3.js"></script>
+<body>
+  <div>
+    <div id='title'><h1 style='color:#fff'>San Francisco MUNI bus greenhouse gas emissions in <em><u>realtime</u></em>.</h1></div>
+    <div id='basemap'></div>
+    <div id='legend'></div>
+  </div>
+<body>
 <script>
 
-var width = 1050,
-    height = 900,
-    TRANSITION_DELAY = 3000;
+(function(){
+    var width = 1050,
+      height = 1100,
+      TRANSITION_DELAY = 3000,
+      formatNumber = d3.format("0,000");
 
-var muniColors = {
-  'F': "none",
-  'J': "none",
-  'K': "none",
-  'L': "none",
-  'M': "none",
-  'N': "none",
-  'T': "none"
-};
-var radius = d3.scale.quantize()
-    .domain([500, 2600])
-    .range(d3.range(9).map(function(i) { return i }));
-
-
-var rateById = d3.map();
-
-var color = d3.scale.quantize()
-    .domain([500, 2600])
-    .range(['rgb(215,48,39)','rgb(244,109,67)','rgb(253,174,97)','rgb(254,224,139)','rgb(255,255,191)','rgb(217,239,139)','rgb(166,217,106)','rgb(102,189,99)','rgb(26,152,80)'].reverse());
-
-var projection = d3.geo.mercator()
-    .center([-122.433701, 37.767683])
-    .scale(250000)
-    .translate([width / 2, height / 2]);
-
-var path = d3.geo.path()
-    .projection(projection);
-
-var svg = d3.select("body").append("svg")
-    .attr("width", width)
-    .attr("height", height);
-
-queue()
-    .defer(d3.json, "basemap/sfmuni.json")
-    .await(ready);
-
-function ready(error, sf) {
-  if (error) throw error;
-
-  svg.append("g")
-      .attr("class", "counties")
-    .selectAll("path")
-      .data(topojson.feature(sf, sf.objects.sfmuni).features)
-    .enter().append("path")
-      .attr('class', 'lines')
-      .attr("d", path);
-
-    d3.xml('http://webservices.nextbus.com/service/publicXMLFeed?command=vehicleLocations&a=sf-muni&t=0', drawmuni);
-    // Reload muni data every 15s
-    setInterval(function() {
-        d3.xml('http://webservices.nextbus.com/service/publicXMLFeed?command=vehicleLocations&a=sf-muni&t=0', drawmuni);
-    }, 5000);
-
-}
-
-function closest_value(num) {
-    var arr = [5,10,15,20,25,30,40,50,60,65]
-    var ef = [2697.625867,1733.866395,1737.892468,1432.777503,1298.974415,1181.91817,513.0948203,520.1749146,558.8262891,757.2473859,979.783983,1613.526484];
-    var curr = arr[0];
-    var diff = Math.abs (num - curr);
-    for (var val = 0; val < arr.length; val++) {
-        var newdiff = Math.abs (num - arr[val]);
-        if (newdiff < diff) {
-            diff = newdiff;
-            curr = arr[val];
-        }
-    }
-    return ef[arr.indexOf(curr)];
-}
-
-function vehid(d) {
-  return d.getAttribute("id");
-}
-
-function drawmuni(munidata) {
-  console.log('map')
- 
-  var translation = function(d) {
-    var pt = projection([d.getAttribute("lon"), d.getAttribute("lat")]);
-    return "translate(" + pt[0] + "," + pt[1] + ")" +
-           "rotate(" + d.getAttribute("heading") + ")"; 
+  var muniColors = {
+    'F': "none",
+    'J': "none",
+    'K': "none",
+    'L': "none",
+    'M': "none",
+    'N': "none",
+    'T': "none"
   };
+  var radius = d3.scale.quantile()
+      .domain([1510,4450])
+      .range(d3.range(9).map(function(i) { return i }));
 
-  vehicles = munidata.getElementsByTagName('vehicle');
-  vehPoints = svg.selectAll(".vehPoint").data(vehicles, vehid);
-  
-  vehPoints.transition().duration(TRANSITION_DELAY)
-         .attr("fill", function(d) {
-    var tag = d.getAttribute("routeTag");
-    return muniColors[tag] || color(closest_value(+d.getAttribute("speedKmHr")*0.621371))
-   })
-         .attr("transform", translation)
-  
-  vehPoints.enter()
-    .append("circle")
-    .attr("class", "vehPoint")
-    .attr("transform", translation)
-    .attr('r', 4)
-    //.attr("r", function(d){ return radius(closest_value(+d.getAttribute("speedKmHr")*0.621371))})
-    .attr("fill", function(d) {
-        var tag = d.getAttribute("routeTag");
-        return muniColors[tag] || color(closest_value(+d.getAttribute("speedKmHr")*0.621371))
-    })
-    .attr("stroke", function(d) {
-        var tag = d.getAttribute("routeTag");
-        return muniColors[tag] || color(closest_value(+d.getAttribute("speedKmHr")*0.621371))
-    })
-    .attr("opacity", 0.0)
-    .transition().duration(TRANSITION_DELAY)
-    .attr("opacity", 1);
+  var rateById = d3.map();
 
-  /*
-  vehPoints.sort(function (a, b) { // select the parent and sort the path's
-      if (a.getAttribute("speedKmHr") > b.getAttribute("speedKmHr")) return -1;               // a is not the hovered element, send "a" to the back
-      else return 1;                             // a is the hovered element, bring "a" to the front
-  });
-  */
-          
-  vehPoints.exit().transition().duration(TRANSITION_DELAY)
-    .attr("opacity", 0.0)
-    .remove();
-}
+  var color = d3.scale.quantile()
+      .domain([0,4450])
+      .range(['#a50026','#d73027','#f46d43','#fdae61','#fee08b','#ffffbf','#d9ef8b','#a6d96a','#66bd63','#1a9850','#006837'].reverse());
+
+  var projection = d3.geo.mercator()
+      .center([-122.448701, 37.76])
+      .scale(420000)
+      .translate([width / 2, height / 2]);
+
+  var path = d3.geo.path()
+      .projection(projection);
+
+  var svg = d3.select("#basemap").append("svg")
+      .attr("width", width)
+      .attr("height", height);
+
+  var tooltip = d3.select("body")
+         .append("div")
+         .style("position", "absolute")
+         .style("z-index", "10")
+         .style("visibility", "hidden")
+         .style("color", "#000")
+         .style("padding", "8px")
+         .style("background-color", "rgba(256, 256, 256, 0.85)")
+         .style("border-radius", "6px")
+         .style("font", "12px sans-serif")
+         .html("tooltip");
+
+  queue()
+      .defer(d3.json, "basemap/sfmuni.json")
+      .await(ready);
+
+  function ready(error, sf) {
+    if (error) throw error;
+
+    svg.append("g")
+        .attr("class", "counties")
+      .selectAll("path")
+        .data(topojson.feature(sf, sf.objects.sfmuni).features)
+      .enter().append("path")
+        .attr('class', 'lines')
+        .attr("d", path);
+
+      d3.xml('http://webservices.nextbus.com/service/publicXMLFeed?command=vehicleLocations&a=sf-muni&t=0', drawmuni);
+      // Reload muni data every 15s
+      setInterval(function() {
+          d3.xml('http://webservices.nextbus.com/service/publicXMLFeed?command=vehicleLocations&a=sf-muni&t=0', drawmuni);
+      }, 3000);
+
+  }
+
+    // Emission Models
+    var v2e  = function (x) {
+        if(x<=0) return {"e":4445, "dv":4445}
+        var avg = 2120;
+        var arr = [8,16,24,32,40,48,56,64,72,80,88,97,105,113]
+        var orr = [4445,3890,2895,2195,1930,1790,1685,1595,1510,1450,1425,1430,1440,1510]
+        var max = function (arrr) { return  Math.max.apply(null, arrr); };
+        var min = function (arrr) { return  Math.min.apply(null, arrr); };
+        var l = [], h = [];
+
+        arr.forEach(function (v) {
+            ((v < x) && l.push(v)) || ((v > x) && h.push(v));
+        });
+
+        var H = arr.indexOf(min(h))
+        var L = arr.indexOf(max(l))
+        if(L<0) return {"e":orr[0], "dv":(orr[0]-avg)/avg}
+        if(H<0) return {"e": orr[orr.length-1], "dv":(orr[orr.length-1] - avg)/avg}
+        else{
+            var e = (x - arr[L]) / (arr[H] - arr[L]) * (orr[H] - orr[L]) + orr[L];
+            return {"e":parseInt(e), "dv":(e-avg)/avg}
+        }
+    };
+
+   var is_electric = function(x){
+     var yes_i_am_electric = ["1","14","21","22","24","3","30","33", "41","45","5", "59","6", "60", "61"];
+     return yes_i_am_electric.indexOf(x) > -1
+   }
+
+  function vehid(d) {
+    return d.getAttribute("id");
+  }
+
+  function drawmuni(munidata) {
+
+    var translation = function(d) {
+      var pt = projection([d.getAttribute("lon"), d.getAttribute("lat")]);
+      return "translate(" + pt[0] + "," + pt[1] + ")" +
+             "rotate(" + d.getAttribute("heading") + ")" +
+             "scale(0.9)";
+    };
+
+    vehicles = munidata.getElementsByTagName('vehicle');
+    vehPoints = svg.selectAll(".vehPoint")
+      .data(vehicles, vehid)
+        .on("mouseover", function(d) {
+            tooltip.html( "<strong>Route:</strong> <span style='color:red'>" + d.getAttribute("routeTag") + "</span><br><span style='color:red; font-size:10px;'>" + formatNumber(Math.round(v2e(+d.getAttribute("speedKmHr")).e /100)*100) + "</span><strong style='font-size:10px;'> g CO<sub>2,e</sub> / km</strong>");
+            tooltip.style("visibility", "visible");
+        })
+        .on("mousemove", function() {
+            return tooltip.style("top", (d3.event.pageY-58)+"px").style("left",(d3.event.pageX-35)+"px");
+        })
+        .on("mouseout", function(){return tooltip.style("visibility", "hidden");});
 
 
-var qrange = function(max, num) {
-    var a = [];
-    for (var i=0; i<num; i++) {
-        a.push(i*max/num);
-    }
-    return a;
-}
+    var triangle = d3.svg.symbol().type("triangle-up");
 
-var boxmargin = 4,
-    lineheight = 14,
-    keyheight = 10,
-    keywidth = 55,
-    boxwidth = 2 * keywidth,
-    formatNumber = d3.format("0,000"),
-    margin = { "left": 160, "top": 115 };
+    vehPoints.transition().duration(TRANSITION_DELAY)
+      .attr("fill", function(d) {
+    		  var tag = d.getAttribute("routeTag");
+          if(is_electric(tag)){ return  color(4)} // Electricity sourced From Hetch Hetchy hydro
+          else{return muniColors[tag] || color(v2e(+d.getAttribute("speedKmHr")).e)}
+    	 })
+      .attr("transform", translation)
 
-var ranges = color.range().length;
+    vehPoints.enter()
+      .append("svg:path")
+      .attr("class", "vehPoint")
+      .attr("transform", translation)
+      .attr("d", triangle)
+      .attr("fill", function(d) {
+    		  var tag = d.getAttribute("routeTag");
+          if(is_electric(tag)){ return  color(4)} // Electricity sourced From Hetch Hetchy hydro
+          else{return muniColors[tag] || color(v2e(+d.getAttribute("speedKmHr")).e)}
+    	 })
+      .attr("opacity", 0.0)
+      .transition().duration(TRANSITION_DELAY)
+      .attr("opacity", 0.9);
 
-var title = ['MUNI Bus','g CO2,e / km'],
-    titleheight = title.length*lineheight + boxmargin;
-var legend = svg.append("g")
-    .attr("transform", "translate ("+margin.left+","+margin.top+")")
-    .attr("class", "legend");
-    
-legend.selectAll("text")
-    .data(title)
-    .enter().append("text")
-    .attr("class", "legend-title")
-    .attr('x', boxwidth/2)
-    .attr("y", function(d, i) { return (i+1)*lineheight-2; })
-    .text(function(d) { return d; })
-    .style('fill', '#eee')
-    .style('text-anchor', 'middle')
+    vehPoints.exit().transition().duration(TRANSITION_DELAY)
+  	.attr("opacity", 0.0)
+  	.remove();
+  }
 
-// make legend box 
-var lb = legend.append("rect")
-    .attr("transform", "translate (0,"+titleheight+")")
-    .attr("class", "legend-box")
-    .attr("width", boxwidth)
-    .attr("height", ranges*lineheight+2*boxmargin+lineheight-keyheight);
+  d3.select(self.frameElement).style("height", height + "px");
 
-// make quantized key legend items
-var li = legend.append("g")
-    .attr("transform", "translate (8,"+(titleheight+boxmargin)+")")
-    .attr("class", "legend-items");
+})()
+</script>
 
-li.selectAll("rect")
-    .data(color.range().map(function(c) {
-      var d = color.invertExtent(c);
-      if (d[0] == null) d[0] = x.domain()[0];
-      if (d[1] == null) d[1] = x.domain()[1];
-      return d;
-    }))
-    .enter().append("rect")
-    .attr("y", function(d, i) { return i*lineheight+lineheight-keyheight; })
-    .attr("width", keywidth)
-    .attr("height", keyheight)
-    .style("fill", function(d) { return color(d[0]); });
-    
-li.selectAll("text")
-    .data(qrange(color.domain()[1], ranges))
-    .enter().append("text")
-    .attr("x", keywidth+5)
-    .attr("y", function(d, i) { return (i+1)*lineheight; })
-    .text(function(d) { return formatNumber(Math.round(d/100)*100); })
-    .style('fill', '#eee');
+<script>
+(function(){
+  var svg = d3.select("#legend").append("svg")
+      .attr("width", 140)
+      .attr("height", 220)
+      .style('background', '#000');
 
+  var boxmargin = 4,
+      lineheight = 14,
+      keyheight = 10,
+      keywidth = 60,
+      boxwidth = 2 * keywidth,
+      formatNumber = d3.format("0,000"),
+      margin = { "left": 10, "top": 10 };
 
-d3.select(self.frameElement).style("height", height + "px");
+  var color = d3.scale.quantile()
+      .domain([0,4450])
+      .range(['#a50026','#d73027','#f46d43','#fdae61','#fee08b','#ffffbf','#d9ef8b','#a6d96a','#66bd63','#1a9850','#006837'].reverse());
 
+  var ranges = color.range().length;
+
+  var title = ['MUNI Bus','g CO2,e / km'],
+      titleheight = title.length*lineheight + boxmargin;
+  var legend = svg.append("g")
+      .attr("transform", "translate ("+margin.left+","+margin.top+")")
+      .attr("class", "legend");
+
+  legend.selectAll("text")
+      .data(title)
+      .enter().append("text")
+      .attr("class", "legend-title")
+      .attr('x', boxwidth/2)
+      .attr("y", function(d, i) { return (i+1)*lineheight-2; })
+      .html(function(d) { return d; })
+      .style('fill', '#eee')
+      .style('text-anchor', 'middle')
+
+  // make legend box
+  var lb = legend.append("rect")
+      .attr("transform", "translate (0,"+titleheight+")")
+      .attr("class", "legend-box")
+      .attr("width", boxwidth)
+      .attr("height", ranges*lineheight+2*boxmargin+lineheight-keyheight);
+
+  // make quantized key legend items
+  var li = legend.append("g")
+      .attr("transform", "translate (8,"+(titleheight+boxmargin)+")")
+      .attr("class", "legend-items");
+
+  li.selectAll("rect")
+      .data(d3.range(ranges).map(function(d){return (ranges-d-1)*500}))
+      .enter().append("rect")
+      .attr("y", function(d, i) { return i*lineheight+lineheight-keyheight; })
+      .attr("width", keywidth)
+      .attr("height", keyheight)
+      .style("fill", function(d) { return color(d); });
+
+  li.selectAll("text")
+      .data(d3.range(ranges).map(function(d){return (ranges-d-1)*500}))
+      .enter().append("text")
+      .attr("x", keywidth+5)
+      .attr("y", function(d, i) { return (i+1)*lineheight; })
+      .text(function(d) { return formatNumber(Math.round(d/10)*10); })
+      .style('fill', '#eee');
+
+})()
 </script>
