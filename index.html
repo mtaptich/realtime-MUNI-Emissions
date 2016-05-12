@@ -244,7 +244,10 @@ body {
     vehPoints = svg.selectAll(".vehPoint")
       .data(vehicles, vehid)
         .on("mouseover", function(d) {
-            tooltip.html( "<strong>Route:</strong> <span style='color:red'>" + d.getAttribute("routeTag") + "</span><br><span style='color:red; font-size:14px;'>" + formatNumber(Math.round(v2e(+d.getAttribute("speedKmHr")).e /100)*100) + "</span><strong style='font-size:10px;'> g CO<sub>2,e</sub> / km</strong>");
+            var tag = d.getAttribute("routeTag");
+            if(is_electric(tag)){ var e = 4}else{ var e = formatNumber(Math.round(v2e(+d.getAttribute("speedKmHr")).e /100)*100) }
+
+            tooltip.html( "<strong>Route:</strong> <span style='color:red'>" + d.getAttribute("routeTag") + "</span><br><span style='color:red; font-size:14px;'>" + e + "</span><strong style='font-size:10px;'> g CO<sub>2,e</sub> / km</strong>");
             tooltip.style("visibility", "visible");
         })
         .on("mousemove", function() {
